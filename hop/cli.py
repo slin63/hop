@@ -140,6 +140,19 @@ def cmd_list():
     return 0
 
 
+def cmd_go(args):
+    if not args:
+        eprint("hop: usage: hop go <letter>")
+        return 1
+    letter = args[0]
+    for e in _entries(load_config()):
+        if e.letter == letter:
+            print(e.path)
+            return 0
+    eprint(f"hop: no directory for letter '{letter}'")
+    return 1
+
+
 def cmd_add(args):
     target = args[0] if args else os.getcwd()
     path = os.path.realpath(target)
@@ -180,6 +193,7 @@ HELP = """hop - jump to predefined directories with single-letter shortcuts
 
 usage:
   hop              list dirs + git status, press a letter to cd there
+  hop go <letter>  cd straight to that letter's dir, no prompt (alias: -g)
   hop add [path]   add the current dir (or PATH) to the list
   hop remove       pick a dir to remove (alias: rm)
   hop list         print the list without prompting
@@ -202,4 +216,6 @@ def main(argv=None):
         return cmd_remove()
     if cmd == "list":
         return cmd_list()
+    if cmd in ("go", "-g"):
+        return cmd_go(argv[1:])
     return cmd_pick()
