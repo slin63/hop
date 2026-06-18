@@ -1,11 +1,11 @@
 import os
 import sys
-import time
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from . import ui
-from .config import abbrev, load_config, save_config
+from .config import abbrev, display_parts, load_config, save_config
 from .gitinfo import git_info
 from .letters import assign_letter
 
@@ -33,58 +33,86 @@ def _entries(cfg):
     return es
 
 
-def _path_width(entries):
-    return max((len(abbrev(e.path)) for e in entries), default=0)
+def _path_widths(entries):
+    """Max prefix and leaf widths so leaf names start at a common column."""
+    pw = lw = 0
+    for e in entries:
+        prefix, leaf = display_parts(e.path)
+        pw = max(pw, len(prefix))
+        lw = max(lw, len(leaf))
+    return pw, lw
 
 
-def run_picker(entries, with_git, prompt):
-    out = sys.stderr
-    width = _path_width(entries)
-    n = len(entries)
+def _start_git_workers(entries):
+    """Resolve git status in daemon threads (never block process exit).
+    Returns (results, done) dicts updated in place as work completes."""
+    results, done = {}, {}
+    sem = threading.Semaphore(8)
 
-    ex = None
-    futures = {}
-    if with_git:
-        ex = ThreadPoolExecutor(max_workers=min(8, n))
-        futures = {e: ex.submit(git_info, e.path) for e in entries}
+    def worker(e):
+        try:
+            with sem:
+                results[e] = git_info(e.path)
+        finally:
+            done[e] = True
 
-    first = True
-    frame = 0
+    for e in entries:
+        threading.Thread(target=worker, args=(e,), daemon=True).start()
+    return results, done
 
-    def paint():
-        nonlocal first
-        if not first:
-            out.write(f"\x1b[{n}A")
-        first = False
-        for e in entries:
-            if with_git:
-                f = futures[e]
-                cell = ui.format_git(f.result()) if f.done() else ui.dim(f"{SPINNER[frame % len(SPINNER)]} …")
-            else:
-                cell = ""
-            out.write("\x1b[2K" + ui.render_row(e, cell, width) + "\n")
-        out.flush()
 
-    while with_git and not all(f.done() for f in futures.values()):
-        paint()
-        frame += 1
-        time.sleep(0.08)
-    paint()
-    if ex:
-        ex.shutdown(wait=False)
-
-    out.write("\n" + prompt)
-    out.flush()
-    key = ui.read_key()
-    out.write("\n")
-    out.flush()
-
-    if key in CANCEL_KEYS:
+def _match(key, entries):
+    if key in CANCEL_KEYS or key is None:
         return None
     for e in entries:
         if key == e.letter:
             return e
     return None
+
+
+def run_picker(entries, with_git, prompt):
+    out = sys.stderr
+    prefix_w, leaf_w = _path_widths(entries)
+    n = len(entries)
+    results, done = _start_git_workers(entries) if with_git else ({}, {})
+
+    def cell_for(e, frame):
+        if not with_git:
+            return ""
+        if done.get(e):
+            return ui.format_git(results.get(e))
+        return ui.dim(f"{SPINNER[frame % len(SPINNER)]} …")
+
+    def paint(frame, first):
+        if not first:
+            out.write(f"\r\x1b[{n}A")
+        for e in entries:
+            out.write("\x1b[2K" + ui.render_row(e, cell_for(e, frame), prefix_w, leaf_w) + "\r\n")
+        out.write("\x1b[2K" + prompt)
+        out.flush()
+
+    with ui.raw_tty() as fd:
+        if fd is None:  # non-interactive fallback
+            paint(0, True)
+            key = ui.read_key()
+        else:
+            key = None
+            frame = 0
+            first = True
+            while True:
+                paint(frame, first)
+                first = False
+                # git still resolving -> animate; otherwise block until a key
+                all_done = not with_git or all(done.get(e) for e in entries)
+                ch = ui.poll_key(fd, None if all_done else 0.08)
+                if ch is not None:
+                    key = ch
+                    break
+                frame += 1
+
+    out.write("\n")
+    out.flush()
+    return _match(key, entries)
 
 
 def cmd_pick():
@@ -104,11 +132,11 @@ def cmd_list():
         eprint("hop: no directories yet. cd somewhere and run `hop add`.")
         return 0
     entries = _entries(cfg)
-    width = _path_width(entries)
+    prefix_w, leaf_w = _path_widths(entries)
     with ThreadPoolExecutor(max_workers=min(8, len(entries))) as ex:
         gmap = dict(zip(entries, ex.map(git_info, [e.path for e in entries])))
     for e in entries:
-        eprint(ui.render_row(e, ui.format_git(gmap[e]), width))
+        eprint(ui.render_row(e, ui.format_git(gmap[e]), prefix_w, leaf_w))
     return 0
 
 

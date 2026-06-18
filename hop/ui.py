@@ -1,5 +1,7 @@
+import contextlib
+import os
 import sys
-from .config import abbrev
+from .config import display_parts
 
 ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 RESET = "\x1b[0m"
@@ -42,6 +44,10 @@ def green(t):
     return f"\x1b[32m{t}{RESET}"
 
 
+def red(t):
+    return f"\x1b[31m{t}{RESET}"
+
+
 def yellow(t):
     return f"\x1b[33m{t}{RESET}"
 
@@ -57,7 +63,7 @@ def dim(t):
 def format_git(info):
     if info is None:
         return dim("—")
-    mark = "❌" if info.dirty else "✅"
+    mark = red("✗") if info.dirty else green("✔")
     branch = cyan(info.branch)
     if not info.has_upstream:
         sync = dim("⚲")
@@ -72,30 +78,47 @@ def format_git(info):
     return f"{mark} {branch} {sync}"
 
 
-def render_row(entry, git_cell, path_width):
+def render_row(entry, git_cell, prefix_w, leaf_w):
+    prefix, leaf = display_parts(entry.path)
     letter = color(f"[{entry.letter}]", entry.rgb, bold=True)
-    path = color(abbrev(entry.path).ljust(path_width), entry.rgb)
-    cell = f"   {git_cell}" if git_cell else ""
+    path = color(prefix.rjust(prefix_w) + leaf.ljust(leaf_w), entry.rgb)
+    cell = f"  {git_cell}" if git_cell else ""
     return f" {letter}  {path}{cell}"
 
 
-def read_key():
-    """Read a single keypress from the controlling terminal (raw mode)."""
+@contextlib.contextmanager
+def raw_tty():
+    """Yield a raw-mode tty fd for non-blocking key reads, or None if no tty."""
     import termios
     import tty
 
     try:
-        tty_in = open("/dev/tty", "rb", buffering=0)
+        fd = os.open("/dev/tty", os.O_RDONLY)
     except OSError:
-        data = sys.stdin.buffer.read(1)
-        return data.decode("utf-8", "ignore") if data else ""
-
-    fd = tty_in.fileno()
+        yield None
+        return
     old = termios.tcgetattr(fd)
     try:
         tty.setraw(fd)
-        ch = tty_in.read(1)
+        yield fd
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        tty_in.close()
-    return ch.decode("utf-8", "ignore") if ch else ""
+        os.close(fd)
+
+
+def poll_key(fd, timeout):
+    """Wait up to `timeout` seconds (None = forever) for a keypress on `fd`.
+    Returns the char, or None if the wait timed out."""
+    import select
+
+    r, _, _ = select.select([fd], [], [], timeout)
+    if not r:
+        return None
+    data = os.read(fd, 1)
+    return data.decode("utf-8", "ignore") if data else None
+
+
+def read_key():
+    """Blocking single-keypress read, used only in the non-tty fallback."""
+    data = sys.stdin.buffer.read(1)
+    return data.decode("utf-8", "ignore") if data else ""
