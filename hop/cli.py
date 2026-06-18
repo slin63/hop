@@ -27,10 +27,22 @@ class Entry:
         return ui.letter_rgb(self.letter)
 
 
+NO_DIRS = "hop: no directories yet. cd somewhere and run `hop add`."
+
+
 def _entries(cfg):
     es = [Entry(d["path"], d["letter"]) for d in cfg["directories"]]
     es.sort(key=lambda e: e.letter)
     return es
+
+
+def _load_entries():
+    """Sorted entries from config, or None (after a message) if the list is empty."""
+    cfg = load_config()
+    if not cfg["directories"]:
+        eprint(NO_DIRS)
+        return None
+    return _entries(cfg)
 
 
 def _path_widths(entries):
@@ -116,22 +128,19 @@ def run_picker(entries, with_git, prompt):
 
 
 def cmd_pick():
-    cfg = load_config()
-    if not cfg["directories"]:
-        eprint("hop: no directories yet. cd somewhere and run `hop add`.")
+    entries = _load_entries()
+    if entries is None:
         return 0
-    chosen = run_picker(_entries(cfg), with_git=True, prompt="hop to> ")
+    chosen = run_picker(entries, with_git=True, prompt="hop to> ")
     if chosen:
         print(chosen.path)
     return 0
 
 
 def cmd_list():
-    cfg = load_config()
-    if not cfg["directories"]:
-        eprint("hop: no directories yet. cd somewhere and run `hop add`.")
+    entries = _load_entries()
+    if entries is None:
         return 0
-    entries = _entries(cfg)
     prefix_w, leaf_w = _path_widths(entries)
     with ThreadPoolExecutor(max_workers=min(8, len(entries))) as ex:
         gmap = dict(zip(entries, ex.map(git_info, [e.path for e in entries])))

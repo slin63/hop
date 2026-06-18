@@ -11,18 +11,8 @@ def _hsl_to_rgb(h, s, l):
     c = (1 - abs(2 * l - 1)) * s
     x = c * (1 - abs((h / 60) % 2 - 1))
     m = l - c / 2
-    if h < 60:
-        r, g, b = c, x, 0
-    elif h < 120:
-        r, g, b = x, c, 0
-    elif h < 180:
-        r, g, b = 0, c, x
-    elif h < 240:
-        r, g, b = 0, x, c
-    elif h < 300:
-        r, g, b = x, 0, c
-    else:
-        r, g, b = c, 0, x
+    sectors = [(c, x, 0), (x, c, 0), (0, c, x), (0, x, c), (x, 0, c), (c, 0, x)]
+    r, g, b = sectors[int(h // 60) % 6]
     return round((r + m) * 255), round((g + m) * 255), round((b + m) * 255)
 
 
@@ -40,24 +30,11 @@ def color(text, rgb, bold=False):
     return f"{prefix}{text}{RESET}"
 
 
-def green(t):
-    return f"\x1b[32m{t}{RESET}"
+def _sgr(code):
+    return lambda t: f"\x1b[{code}m{t}{RESET}"
 
 
-def red(t):
-    return f"\x1b[31m{t}{RESET}"
-
-
-def yellow(t):
-    return f"\x1b[33m{t}{RESET}"
-
-
-def cyan(t):
-    return f"\x1b[36m{t}{RESET}"
-
-
-def dim(t):
-    return f"\x1b[2m{t}{RESET}"
+green, red, yellow, cyan, dim = (_sgr(c) for c in (32, 31, 33, 36, 2))
 
 
 def format_git(info):
