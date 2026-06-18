@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hop-dir"
+version = "0.1.0"
+description = "Jump to predefined directories with single-letter shortcuts."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = []
+
+[project.scripts]
+_hop = "hop.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hop"]
