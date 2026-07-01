@@ -6,13 +6,18 @@ Run `hop`, see your saved directories (each with a fixed letter, a fixed color, 
 status), press a letter, and you're there.
 
 ```
- [d]  ~/projects/dotfiles        ✅ main ≡
- [h]  ~/projects/hop             ❌ feat/colors ↑2
- [w]  ~/work/api                 ✅ release ↓1
- [z]  ~/notes                    —
+ [d]  dotfiles              ✔ main ≡
+ [h]  hop                   ✗ feat/colors ↑2
+ [f]  hers/apps/flow        ✔ release ↓1
+ [l]  goflow/apps/flow      ✔ main ≡
+ [z]  notes                 —
 
 hop to>
 ```
+
+Each row shows just the directory's own name; when two directories share a name
+(both `flow` above), hop prepends the fewest parent segments needed to tell them
+apart.
 
 ## Install
 

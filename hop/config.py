@@ -38,22 +38,17 @@ def abbrev(path):
     return path
 
 
-def display_path(path, keep=3):
-    """Abbreviated path trimmed to the leaf plus up to `keep - 1` parents,
-    prefixing '..' when ancestors are dropped. e.g. ~/projects/goflow/apps/x
-    -> ../goflow/apps/x"""
-    disp = abbrev(path)
-    parts = [p for p in disp.split(os.sep) if p]
-    if len(parts) <= keep:
-        return disp
-    return ".." + os.sep + os.sep.join(parts[-keep:])
-
-
-def display_parts(path):
-    """Split the display path into (prefix-incl-trailing-sep, leaf) so callers
-    can align on the leaf's start column."""
-    disp = display_path(path)
-    idx = disp.rfind(os.sep)
-    if idx == -1:
-        return "", disp
-    return disp[: idx + 1], disp[idx + 1:]
+def display_labels(paths):
+    """Map each path -> (prefix, leaf). leaf is the directory's own name; prefix
+    is the fewest upstream segments (with trailing sep) needed to disambiguate
+    paths that share a leaf name, or '' when the leaf alone is unique."""
+    segs = {p: [s for s in p.split(os.sep) if s] for p in paths}
+    labels = {}
+    for p, parts in segs.items():
+        k = 1
+        while k < len(parts) and any(q != p and segs[q][-k:] == parts[-k:] for q in paths):
+            k += 1
+        chosen = parts[-k:] if parts else [p]
+        prefix = os.sep.join(chosen[:-1])
+        labels[p] = (prefix + os.sep if prefix else "", chosen[-1])
+    return labels

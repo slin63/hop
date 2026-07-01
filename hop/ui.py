@@ -1,7 +1,6 @@
 import contextlib
 import os
 import sys
-from .config import display_parts
 
 ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
 RESET = "\x1b[0m"
@@ -77,10 +76,12 @@ def cell_budget(prefix_w, leaf_w):
     return term_width() - (prefix_w + leaf_w + 8) - 1
 
 
-def render_row(entry, git_cell, prefix_w, leaf_w):
-    prefix, leaf = display_parts(entry.path)
+def render_row(entry, parts, git_cell, prefix_w, leaf_w):
+    prefix, leaf = parts
     letter = color(f"[{entry.letter}]", entry.rgb, bold=True)
-    path = color(prefix.rjust(prefix_w) + leaf.ljust(leaf_w), entry.rgb)
+    pad = " " * (prefix_w + leaf_w - len(prefix) - len(leaf))
+    head = color(prefix, entry.rgb) if prefix else ""
+    path = head + color(leaf, entry.rgb, bold=True) + pad
     cell = f"  {git_cell}" if git_cell else ""
     return f" {letter}  {path}{cell}"
 

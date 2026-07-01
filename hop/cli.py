@@ -5,7 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from . import ui
-from .config import abbrev, display_parts, load_config, save_config
+from .config import abbrev, display_labels, load_config, save_config
 from .gitinfo import git_info
 from .letters import assign_letter
 
@@ -45,14 +45,13 @@ def _load_entries():
     return _entries(cfg)
 
 
-def _path_widths(entries):
-    """Max prefix and leaf widths so leaf names start at a common column."""
-    pw = lw = 0
-    for e in entries:
-        prefix, leaf = display_parts(e.path)
-        pw = max(pw, len(prefix))
-        lw = max(lw, len(leaf))
-    return pw, lw
+def _labels_and_widths(entries):
+    """Collision-aware (prefix, leaf) label per entry, plus the max prefix and
+    leaf widths so leaf names align on a common column."""
+    labels = display_labels([e.path for e in entries])
+    pw = max((len(labels[e.path][0]) for e in entries), default=0)
+    lw = max((len(labels[e.path][1]) for e in entries), default=0)
+    return labels, pw, lw
 
 
 def _start_git_workers(entries):
@@ -84,7 +83,7 @@ def _match(key, entries):
 
 def run_picker(entries, with_git, prompt):
     out = sys.stderr
-    prefix_w, leaf_w = _path_widths(entries)
+    labels, prefix_w, leaf_w = _labels_and_widths(entries)
     cell_max = ui.cell_budget(prefix_w, leaf_w)
     n = len(entries)
     results, done = _start_git_workers(entries) if with_git else ({}, {})
@@ -100,7 +99,7 @@ def run_picker(entries, with_git, prompt):
         if not first:
             out.write(f"\r\x1b[{n}A")
         for e in entries:
-            out.write("\x1b[2K" + ui.render_row(e, cell_for(e, frame), prefix_w, leaf_w) + "\r\n")
+            out.write("\x1b[2K" + ui.render_row(e, labels[e.path], cell_for(e, frame), prefix_w, leaf_w) + "\r\n")
         out.write("\x1b[2K" + prompt)
         out.flush()
 
@@ -147,12 +146,12 @@ def cmd_list():
     entries = _load_entries()
     if entries is None:
         return 0
-    prefix_w, leaf_w = _path_widths(entries)
+    labels, prefix_w, leaf_w = _labels_and_widths(entries)
     cell_max = ui.cell_budget(prefix_w, leaf_w)
     with ThreadPoolExecutor(max_workers=min(8, len(entries))) as ex:
         gmap = dict(zip(entries, ex.map(git_info, [e.path for e in entries])))
     for e in entries:
-        eprint(ui.render_row(e, ui.format_git(gmap[e], cell_max), prefix_w, leaf_w))
+        eprint(ui.render_row(e, labels[e.path], ui.format_git(gmap[e], cell_max), prefix_w, leaf_w))
     return 0
 
 
