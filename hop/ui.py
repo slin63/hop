@@ -37,22 +37,44 @@ def _sgr(code):
 green, red, yellow, cyan, dim = (_sgr(c) for c in (32, 31, 33, 36, 2))
 
 
-def format_git(info):
+def format_git(info, cell_max=None):
     if info is None:
         return dim("—")
     mark = red("✗") if info.dirty else green("✔")
-    branch = cyan(info.branch)
     if not info.has_upstream:
-        sync = dim("⚲")
+        sync_plain, sync = "⚲", dim("⚲")
     elif info.ahead and info.behind:
-        sync = yellow(f"↑{info.ahead} ↓{info.behind}")
+        sync_plain, sync = f"↑{info.ahead} ↓{info.behind}", yellow(f"↑{info.ahead} ↓{info.behind}")
     elif info.ahead:
-        sync = yellow(f"↑{info.ahead}")
+        sync_plain, sync = f"↑{info.ahead}", yellow(f"↑{info.ahead}")
     elif info.behind:
-        sync = yellow(f"↓{info.behind}")
+        sync_plain, sync = f"↓{info.behind}", yellow(f"↓{info.behind}")
     else:
-        sync = green("≡")
-    return f"{mark} {branch} {sync}"
+        sync_plain, sync = "≡", green("≡")
+    branch = info.branch
+    if cell_max is not None:
+        # cell is "{mark} {branch} {sync}" -> mark + 2 spaces + sync is fixed overhead
+        avail = cell_max - (3 + len(sync_plain))
+        if len(branch) > avail:
+            branch = branch[: max(1, avail - 1)] + "…"
+    return f"{mark} {cyan(branch)} {sync}"
+
+
+def term_width(default=80):
+    """Columns of the controlling terminal. stdout is captured by the shell
+    wrapper, so prefer stderr (where we render), then stdout, then a default."""
+    for stream in (sys.stderr, sys.stdout):
+        try:
+            return os.get_terminal_size(stream.fileno()).columns
+        except OSError:
+            pass
+    return default
+
+
+def cell_budget(prefix_w, leaf_w):
+    """Max visible width for a row's git cell so the row fits the terminal.
+    Row layout: ' [x]  <path>  <cell>' -> prefix_w+leaf_w+8 before the cell."""
+    return term_width() - (prefix_w + leaf_w + 8) - 1
 
 
 def render_row(entry, git_cell, prefix_w, leaf_w):

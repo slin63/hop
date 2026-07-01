@@ -85,6 +85,7 @@ def _match(key, entries):
 def run_picker(entries, with_git, prompt):
     out = sys.stderr
     prefix_w, leaf_w = _path_widths(entries)
+    cell_max = ui.cell_budget(prefix_w, leaf_w)
     n = len(entries)
     results, done = _start_git_workers(entries) if with_git else ({}, {})
 
@@ -92,7 +93,7 @@ def run_picker(entries, with_git, prompt):
         if not with_git:
             return ""
         if done.get(e):
-            return ui.format_git(results.get(e))
+            return ui.format_git(results.get(e), cell_max)
         return ui.dim(f"{SPINNER[frame % len(SPINNER)]} …")
 
     def paint(frame, first):
@@ -108,19 +109,24 @@ def run_picker(entries, with_git, prompt):
             paint(0, True)
             key = ui.read_key()
         else:
-            key = None
-            frame = 0
-            first = True
-            while True:
-                paint(frame, first)
-                first = False
-                # git still resolving -> animate; otherwise block until a key
-                all_done = not with_git or all(done.get(e) for e in entries)
-                ch = ui.poll_key(fd, None if all_done else 0.08)
-                if ch is not None:
-                    key = ch
-                    break
-                frame += 1
+            out.write("\x1b[?7l")  # no line wrap: keep each row to one physical line so repaint tracks
+            try:
+                key = None
+                frame = 0
+                first = True
+                while True:
+                    paint(frame, first)
+                    first = False
+                    # git still resolving -> animate; otherwise block until a key
+                    all_done = not with_git or all(done.get(e) for e in entries)
+                    ch = ui.poll_key(fd, None if all_done else 0.08)
+                    if ch is not None:
+                        key = ch
+                        break
+                    frame += 1
+            finally:
+                out.write("\x1b[?7h")  # restore line wrap
+                out.flush()
 
     out.write("\n")
     out.flush()
@@ -142,10 +148,11 @@ def cmd_list():
     if entries is None:
         return 0
     prefix_w, leaf_w = _path_widths(entries)
+    cell_max = ui.cell_budget(prefix_w, leaf_w)
     with ThreadPoolExecutor(max_workers=min(8, len(entries))) as ex:
         gmap = dict(zip(entries, ex.map(git_info, [e.path for e in entries])))
     for e in entries:
-        eprint(ui.render_row(e, ui.format_git(gmap[e]), prefix_w, leaf_w))
+        eprint(ui.render_row(e, ui.format_git(gmap[e], cell_max), prefix_w, leaf_w))
     return 0
 
 
